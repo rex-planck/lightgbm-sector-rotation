@@ -49,20 +49,18 @@ where  is the daily decay rate (default 0.1).
 
 ---
 
-## 📊 3. Performance Benchmarks
+## 📊 3. Performance Gallery
 
-Retrospective testing (Feb 2023 - Jan 2026) shows significant outperformance, particularly in identifying regime shifts.
+The strategy shows consistent alpha generation across various sectors. Below are the equity curves for the 6 representative tickers:
 
-| Ticker | Name | Strategy Return | Benchmark | Alpha |
-| --- | --- | --- | --- | --- |
-| **002202** | **Goldwind Science** | **+327.62%** | +130.65% | 🚀 **High** |
-| **601615** | **Mingyang Smart** | **+144.76%** | -13.01% | 🛡️ **Defense** |
-| **000630** | **Tongling Nonferrous** | **+265.62%** | +152.13% | ✅ **Solid** |
-| **603067** | **Zhenhua** | **+256.44%** | +220.86% | ✅ **Moderate** |
-| **000875** | **Jilin Electric** | **+104.68%** | +18.12% | 🚀 **High** |
+| **000630 - Tongling Nonferrous** | **000875 - Jilin Electric** | **000878 - Yunnan Copper** |
+| :---: | :---: | :---: |
+| ![000630](backtest_results/000630_backtest.png) | ![000875](backtest_results/000875_backtest.png) | ![000878](backtest_results/000878_backtest.png) |
+| **002202 - Goldwind Science** | **601615 - Mingyang Smart** | **603067 - Zhenhua** |
+| ![002202](backtest_results/002202_backtest.png) | ![601615](backtest_results/601615_backtest.png) | ![603067](backtest_results/603067_backtest.png) |
 
+> **Note**: Blue line represents the Strategy Equity, Red line represents the Benchmark (Buy & Hold).
 ---
-
 ## 📂 4. Project Structure
 
 ```text
