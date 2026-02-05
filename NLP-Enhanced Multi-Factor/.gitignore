@@ -16,8 +16,10 @@ venv/
 
 # Lean / Backtest Results
 results/
-backtest_results/
 *.log
+# Do not ignore backtest results images as per user request
+!backtest_results/
+!backtest_results/*.png
 
 # Local Configuration Backups
 lean.json.old
