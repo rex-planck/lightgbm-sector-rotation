@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Data files
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+*.csv
+*.pkl
+*.parquet
+
+# Output directories
+output_v3/factors/
+output_v3/models/*.pth
+output_v3/models/*.pkl
+output_v3/reports/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
