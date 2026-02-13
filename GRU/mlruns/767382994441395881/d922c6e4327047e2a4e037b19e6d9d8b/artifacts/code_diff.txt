@@ -1,0 +1,154 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..a28ea27 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,148 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++# 直接使用官方类，不搞自定义继承了
++from qlib.data.dataset.handler import DataHandlerLP
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (纯公式列表)
++custom_factors = [
++    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # 5日乖离
++    "$volume / Mean($volume, 20)",  # 量比
++    "Std($close, 20) / $close",  # 波动率
++    "($open - Ref($close, 1)) / Ref($close, 1)",  # 隔夜跳空
++    "($close - $open) / $open"  # 日内力度
++]
++
++# 3. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++FIT_START = "2018-01-01"
++FIT_END = "2020-12-31"
++
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++
++    # ⚠️【关键修改】这里千万不要写 fit_start_time！
++    # 如果写了，DataHandlerLP 就会报错 "unexpected argument"。
++    # "fit_start_time": FIT_START,  <-- 删除
++    # "fit_end_time": FIT_END,      <-- 删除
++
++    "instruments": market,
++
++    # 数据加载配置
++    "data_loader": {
++        "class": "QlibDataLoader",
++        "module_path": "qlib.data.dataset.loader",
++        "kwargs": {
++            "config": {
++                "feature": custom_factors,
++                "label": ["Ref($close, -5) / $close - 1"],
++            },
++        },
++    },
++
++    # 🔥🔥🔥【关键修改】在这里显式注入时间参数 🔥🔥🔥
++    # 这样底层处理器能拿到参数，而上层 Handler 又不会报错
++    "infer_processors": [
++        {
++            "class": "RobustZScoreNorm",
++            "kwargs": {
++                "fields_group": "feature",
++                "clip_outlier": True,
++                "fit_start_time": FIT_START,  # 👈 这里必须给
++                "fit_end_time": FIT_END  # 👈 这里必须给
++            }
++        },
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {
++            "class": "CSRankNorm",
++            "kwargs": {
++                "fields_group": "label",
++                "fit_start_time": FIT_START,  # 👈 这里必须给
++                "fit_end_time": FIT_END  # 👈 这里必须给
++            }
++        },
++    ],
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                # 直接用官方类，通过配置解决问题
++                "class": "DataHandlerLP",
++                "module_path": "qlib.data.dataset.handler",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": (FIT_START, FIT_END),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验 (Precise Config)...")
++        print(f"因子数量: {len(custom_factors)}")
++
++        # 训练
++        print("1. 初始化模型与数据...")
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++
++        print("2. 开始训练 (LightGBM)...")
++        model.fit(dataset)
++
++        # 预测与IC分析
++        print("3. 预测与评估...")
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.01:
++            print("✅ 实验成功！")
++            print("   这证明了你完全掌握了 Qlib 的配置逻辑：Handler 管调度，Processor 管计算。")
+\ No newline at end of file

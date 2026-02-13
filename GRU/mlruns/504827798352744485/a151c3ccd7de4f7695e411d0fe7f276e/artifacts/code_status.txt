@@ -1,0 +1,26 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	new file:   .idea/.name
+	new file:   .idea/vcs.xml
+	new file:   05_model_gru.py
+	new file:   06_backtest.py
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   05_model_gru.py
+	modified:   06_backtest.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	gru_best.pth
+	mlruns/125374718192469852/
+	mlruns/145326660559923196/
+	mlruns/495073715310499100/
+	mlruns/504827798352744485/
+	mlruns/767382994441395881/
+	mlruns/862277642550428843/
+

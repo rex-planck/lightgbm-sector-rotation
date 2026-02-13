@@ -1,0 +1,15 @@
+artifact_uri: file:C:\Users\Rex\Desktop\GITHUB\Python-Quant-Practice\python_program\mlruns/125374718192469852/1aba0bd36b914dc99f7afda5d326134c/artifacts
+end_time: 1768974514235
+entry_point_name: ''
+experiment_id: '125374718192469852'
+lifecycle_stage: active
+run_id: 1aba0bd36b914dc99f7afda5d326134c
+run_name: mlflow_recorder
+run_uuid: 1aba0bd36b914dc99f7afda5d326134c
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1768974467605
+status: 4
+tags: []
+user_id: Rex

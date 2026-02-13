@@ -1,0 +1,161 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..a4a5ab5 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,155 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++from qlib.data.dataset.handler import DataHandlerLP
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (纯公式列表，最安全)
++# Qlib 会自动把公式字符串作为列名
++custom_factors = [
++    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # 因子1
++    "$volume / Mean($volume, 20)",  # 因子2
++    "Std($close, 20) / $close",  # 因子3
++    "($open - Ref($close, 1)) / Ref($close, 1)",  # 因子4
++    "($close - $open) / $open"  # 因子5
++]
++
++
++# 3. 定义拦截器类 (解决 Qlib 版本兼容性问题)
++class MyAlphaHandler(DataHandlerLP):
++    def __init__(self, instruments, start_time, end_time, data_loader, fit_start_time=None, fit_end_time=None,
++                 **kwargs):
++        # 核心：拦截并丢弃 fit_start_time，防止传给父类报错
++        # 我们不需要保留它们，因为下面的 Config 里已经给处理器写死了
++        super().__init__(instruments, start_time, end_time, data_loader, **kwargs)
++
++
++# 4. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++FIT_START = "2018-01-01"
++FIT_END = "2020-12-31"
++
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++
++    # 留给 MyAlphaHandler 拦截用
++    "fit_start_time": FIT_START,
++    "fit_end_time": FIT_END,
++    "instruments": market,
++
++    # 数据加载配置
++    "data_loader": {
++        "class": "QlibDataLoader",
++        "module_path": "qlib.data.dataset.loader",
++        "kwargs": {
++            "config": {
++                # 传入纯列表，Qlib 绝对能看懂
++                "feature": custom_factors,
++                "label": ["Ref($close, -5) / $close - 1"],
++            },
++        },
++    },
++
++    # 显式传参给处理器
++    "infer_processors": [
++        {
++            "class": "RobustZScoreNorm",
++            "kwargs": {
++                "fields_group": "feature",
++                "clip_outlier": True,
++                "fit_start_time": FIT_START,
++                "fit_end_time": FIT_END
++            }
++        },
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {
++            "class": "CSRankNorm",
++            "kwargs": {
++                "fields_group": "label",
++                "fit_start_time": FIT_START,
++                "fit_end_time": FIT_END
++            }
++        },
++    ],
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                "class": "MyAlphaHandler",
++                "module_path": "__main__",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": (FIT_START, FIT_END),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验 (Safe Mode)...")
++        print(f"因子数量: {len(custom_factors)}")
++
++        # 训练
++        print("1. 初始化模型与数据...")
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++
++        print("2. 开始训练 (LightGBM)...")
++        model.fit(dataset)
++
++        # 预测与IC分析
++        print("3. 预测与评估...")
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.01:
++            print("✅ 实验成功！")
++            print("   (你通过了最艰难的调试关卡，现在你拥有了任意修改因子的能力)")
+\ No newline at end of file

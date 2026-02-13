@@ -1,0 +1,299 @@
+diff --git a/python_program/05_model_gru.py b/python_program/05_model_gru.py
+index a28ea27..5410967 100644
+--- a/python_program/05_model_gru.py
++++ b/python_program/05_model_gru.py
+@@ -2,147 +2,180 @@ import qlib
+ from qlib.constant import REG_CN
+ from qlib.utils import init_instance_by_config
+ from qlib.workflow import R
+-# 直接使用官方类，不搞自定义继承了
+-from qlib.data.dataset.handler import DataHandlerLP
++import torch
++import torch.nn as nn
++import torch.optim as optim
+ import pandas as pd
++import numpy as np
+ import os
+ 
+ # 1. 初始化
+ provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
+ qlib.init(provider_uri=provider_uri, region=REG_CN)
+ 
+-# 2. 定义自定义因子 (纯公式列表)
+-custom_factors = [
+-    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # 5日乖离
+-    "$volume / Mean($volume, 20)",  # 量比
+-    "Std($close, 20) / $close",  # 波动率
+-    "($open - Ref($close, 1)) / Ref($close, 1)",  # 隔夜跳空
+-    "($close - $open) / $open"  # 日内力度
+-]
+ 
+-# 3. 配置工作流
++# 2. 定义 PyTorch GRU 模型
++class SimpleGRU(nn.Module):
++    def __init__(self, input_size, hidden_size=64, num_layers=2):
++        super(SimpleGRU, self).__init__()
++        self.gru = nn.GRU(
++            input_size=input_size,
++            hidden_size=hidden_size,
++            num_layers=num_layers,
++            batch_first=True
++        )
++        self.fc = nn.Linear(hidden_size, 1)
++
++    def forward(self, x):
++        # x: (batch, seq_len, features)
++        out, _ = self.gru(x)
++        # 取最后一个时间步
++        out = self.fc(out[:, -1, :])
++        return out.squeeze()
++
++
++# 3. 准备数据配置
+ market = "csi300"
+-benchmark = "SH000300"
+-FIT_START = "2018-01-01"
+-FIT_END = "2020-12-31"
++d_feat = 158
+ 
+ data_handler_config = {
+-    "start_time": "2018-01-01",
++    "start_time": "2015-01-01",
+     "end_time": "2022-12-31",
+-
+-    # ⚠️【关键修改】这里千万不要写 fit_start_time！
+-    # 如果写了，DataHandlerLP 就会报错 "unexpected argument"。
+-    # "fit_start_time": FIT_START,  <-- 删除
+-    # "fit_end_time": FIT_END,      <-- 删除
+-
++    "fit_start_time": "2015-01-01",
++    "fit_end_time": "2020-12-31",
+     "instruments": market,
+-
+-    # 数据加载配置
+-    "data_loader": {
+-        "class": "QlibDataLoader",
+-        "module_path": "qlib.data.dataset.loader",
+-        "kwargs": {
+-            "config": {
+-                "feature": custom_factors,
+-                "label": ["Ref($close, -5) / $close - 1"],
+-            },
+-        },
+-    },
+-
+-    # 🔥🔥🔥【关键修改】在这里显式注入时间参数 🔥🔥🔥
+-    # 这样底层处理器能拿到参数，而上层 Handler 又不会报错
+     "infer_processors": [
+-        {
+-            "class": "RobustZScoreNorm",
+-            "kwargs": {
+-                "fields_group": "feature",
+-                "clip_outlier": True,
+-                "fit_start_time": FIT_START,  # 👈 这里必须给
+-                "fit_end_time": FIT_END  # 👈 这里必须给
+-            }
+-        },
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
+         {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
+     ],
+     "learn_processors": [
+         {"class": "DropnaLabel"},
+-        {
+-            "class": "CSRankNorm",
+-            "kwargs": {
+-                "fields_group": "label",
+-                "fit_start_time": FIT_START,  # 👈 这里必须给
+-                "fit_end_time": FIT_END  # 👈 这里必须给
+-            }
+-        },
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
+     ],
++    "label": ["Ref($close, -5) / $close - 1"],
+ }
+ 
+-task = {
+-    "model": {
+-        "class": "LGBModel",
+-        "module_path": "qlib.contrib.model.gbdt",
+-        "kwargs": {
+-            "loss": "mse",
+-            "colsample_bytree": 0.8879,
+-            "learning_rate": 0.0421,
+-            "subsample": 0.8789,
+-            "lambda_l1": 205.6999,
+-            "lambda_l2": 580.9768,
+-            "max_depth": 8,
+-            "num_leaves": 210,
+-            "num_threads": 20,
++dataset_config = {
++    "class": "TSDatasetH",
++    "module_path": "qlib.data.dataset",
++    "kwargs": {
++        "handler": {
++            "class": "Alpha158",
++            "module_path": "qlib.contrib.data.handler",
++            "kwargs": data_handler_config,
+         },
+-    },
+-    "dataset": {
+-        "class": "DatasetH",
+-        "module_path": "qlib.data.dataset",
+-        "kwargs": {
+-            "handler": {
+-                # 直接用官方类，通过配置解决问题
+-                "class": "DataHandlerLP",
+-                "module_path": "qlib.data.dataset.handler",
+-                "kwargs": data_handler_config,
+-            },
+-            "segments": {
+-                "train": (FIT_START, FIT_END),
+-                "valid": ("2021-01-01", "2021-12-31"),
+-                "test": ("2022-01-01", "2022-12-31"),
+-            },
++        "segments": {
++            "train": ("2015-01-01", "2020-12-31"),
++            "valid": ("2021-01-01", "2021-12-31"),
++            "test": ("2022-01-01", "2022-12-31"),
+         },
++        "step_len": 20,  # 往回看 20 天
+     },
+ }
+ 
+-if __name__ == "__main__":
+-    with R.start(experiment_name="research_custom_factors"):
+-        print("🧪 正在进行自定义因子实验 (Precise Config)...")
+-        print(f"因子数量: {len(custom_factors)}")
+-
+-        # 训练
+-        print("1. 初始化模型与数据...")
+-        model = init_instance_by_config(task["model"])
+-        dataset = init_instance_by_config(task["dataset"])
+-
+-        print("2. 开始训练 (LightGBM)...")
+-        model.fit(dataset)
+ 
+-        # 预测与IC分析
+-        print("3. 预测与评估...")
+-        recorder = R.get_recorder()
+-        pred = model.predict(dataset)
+-        label = dataset.prepare(segments="test", col_set="label")
+-
+-        # 简单对齐
+-        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
+-        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
+-
+-        idx = pred.index.intersection(label.index)
+-        ic = pred.loc[idx].corr(label.loc[idx])
+-        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++# 4. 手写训练流程
++def run_custom_training():
++    with R.start(experiment_name="custom_gru_training"):
++        print("🛠️ 初始化数据引擎...")
++        dataset = init_instance_by_config(dataset_config)
++
++        # 🔥🔥🔥 修复点：将 'core' 改为 'infer' 🔥🔥🔥
++        # infer 代表推断用的全量数据，包含特征和标签
++        print("📥 加载训练数据 (Train)...")
++        train_loader = dataset.prepare("train", col_set=["feature", "label"], data_key="infer")
++        print("📥 加载验证数据 (Valid)...")
++        valid_loader = dataset.prepare("valid", col_set=["feature", "label"], data_key="infer")
++        print("📥 加载测试数据 (Test)...")
++        test_loader = dataset.prepare("test", col_set=["feature", "label"], data_key="infer")
++
++        # 实例化模型
++        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++        print(f"🚀 使用设备: {device}")
++
++        model = SimpleGRU(input_size=158, hidden_size=64).to(device)
++        criterion = nn.MSELoss()
++        optimizer = optim.Adam(model.parameters(), lr=0.001)
++
++        print("\n🔥 开始手写训练循环 (Training Loop)...")
++        epochs = 5
++        for epoch in range(epochs):
++            model.train()
++            total_loss = 0
++            count = 0
++
++            for batch_idx, batch_data in enumerate(train_loader):
++                # 转换数据格式
++                # batch_data 是 numpy array: [Batch, Step, Feat+Label]
++                # 特征是前 158 列，标签是最后一列
++                data_np = batch_data[:, :, :-1]
++                label_np = batch_data[:, -1, -1]  # 取最后一个时间步的 Label
++
++                # 检查 nan
++                if np.isnan(data_np).any() or np.isnan(label_np).any():
++                    continue  # 跳过脏数据
++
++                data = torch.tensor(data_np, dtype=torch.float32).to(device)
++                label = torch.tensor(label_np, dtype=torch.float32).to(device)
++
++                optimizer.zero_grad()
++                output = model(data)
++                loss = criterion(output, label)
++                loss.backward()
++                optimizer.step()
++
++                total_loss += loss.item()
++                count += 1
++
++            avg_loss = total_loss / count if count > 0 else 0
++            print(f"   Epoch {epoch + 1}/{epochs} | Loss: {avg_loss:.6f}")
++
++        print("\n🔮 开始预测 (Inference)...")
++        model.eval()
++        preds = []
++
++        with torch.no_grad():
++            for batch_idx, batch_data in enumerate(test_loader):
++                data_np = batch_data[:, :, :-1]
++
++                # 简单的缺失值填充 (防止预测报错)
++                if np.isnan(data_np).any():
++                    data_np = np.nan_to_num(data_np)
++
++                data = torch.tensor(data_np, dtype=torch.float32).to(device)
++                output = model(data)
++                preds.append(output.cpu().numpy())
++
++        # 拼接预测结果
++        all_preds = np.concatenate(preds)
++
++        # 获取真实标签进行对比
++        # 重新获取测试集的 DataFrame 格式标签
++        df_test = dataset.prepare("test", col_set=["label"], data_key="infer")
++
++        # 对齐数据长度 (因为时序模型会吃掉前 step_len-1 个数据)
++        min_len = min(len(all_preds), len(df_test))
++        final_pred = all_preds[-min_len:]
++        final_label = df_test.iloc[-min_len:, 0].values
++
++        # 计算 IC
++        df_res = pd.DataFrame({"pred": final_pred, "label": final_label})
++        # 去除含 NaN 的行
++        df_res = df_res.dropna()
++
++        ic = df_res.corr().iloc[0, 1]
++        rank_ic = df_res.rank().corr().iloc[0, 1]
+ 
+         print("-" * 50)
+-        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"📊 实验结果 (Custom PyTorch Loop):")
++        print(f"   Samples: {len(df_res)}")
++        print(f"   IC:      {ic:.4f}")
+         print(f"   Rank IC: {rank_ic:.4f}")
+         print("-" * 50)
+ 
+-        if rank_ic > 0.01:
+-            print("✅ 实验成功！")
+-            print("   这证明了你完全掌握了 Qlib 的配置逻辑：Handler 管调度，Processor 管计算。")
+\ No newline at end of file
++        if rank_ic > 0.02:
++            print("✅ 成功！深度学习模型跑通了！")
++
++
++if __name__ == "__main__":
++    run_custom_training()
+\ No newline at end of file

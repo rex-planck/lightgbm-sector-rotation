@@ -1,0 +1,18 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	new file:   .idea/.name
+	new file:   .idea/vcs.xml
+	new file:   05_research_custom_factor.py
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   05_research_custom_factor.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	mlruns/767382994441395881/
+

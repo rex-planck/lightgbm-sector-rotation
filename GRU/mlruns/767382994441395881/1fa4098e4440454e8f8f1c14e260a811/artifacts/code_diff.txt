@@ -1,0 +1,131 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..9390bb3 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,125 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (5个狙击手)
++custom_factors = [
++    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # Bias5
++    "$volume / Mean($volume, 20)",  # Vol Ratio
++    "Std($close, 20) / $close",  # Volatility
++    "($open - Ref($close, 1)) / Ref($close, 1)",  # Overnight
++    "($close - $open) / $open"  # Intraday
++]
++
++# 3. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++
++# 🔥 核心修正点：数据配置结构大变身 🔥
++# 我们不再直接传 'feature'，而是构造一个 data_loader
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++    "fit_start_time": "2018-01-01",
++    "fit_end_time": "2020-12-31",
++    "instruments": market,
++
++    # ⬇️ 这里是关键！我们用 data_loader 来告诉 Qlib 怎么抓取自定义数据
++    "data_loader": {
++        "class": "QlibDataLoader",
++        "module_path": "qlib.data.dataset.loader",
++        "kwargs": {
++            "config": {
++                "feature": custom_factors,  # 你的5个因子放这里
++                "label": ["Ref($close, -5) / $close - 1"],  # 预测目标放这里
++            },
++        },
++    },
++
++    # 后处理保持不变
++    "infer_processors": [
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
++    ],
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                # 🔥 修正点：不再用 Alpha158，改用通用的 DataHandlerLP
++                "class": "DataHandlerLP",
++                "module_path": "qlib.data.dataset.handler",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": ("2018-01-01", "2020-12-31"),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验 (DataHandlerLP 模式)...")
++        print("使用的因子公式:")
++        for f in custom_factors:
++            print(f"  - {f}")
++
++        # 训练
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++        model.fit(dataset)
++
++        # 预测与IC分析
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.03:
++            print("✅ 惊人！仅仅用 5 个简单因子就达到了及格线！")
++        else:
++            print("💡 正常。5个手搓因子通常打不过 158 个海量因子。但这是你完全掌控的逻辑。")
+\ No newline at end of file

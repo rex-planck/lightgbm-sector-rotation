@@ -1,0 +1,24 @@
+diff --git a/python_program/.idea/.name b/python_program/.idea/.name
+new file mode 100644
+index 0000000..fadc7de
+--- /dev/null
++++ b/python_program/.idea/.name
+@@ -0,0 +1 @@
++04_analysis.py
+\ No newline at end of file
+diff --git a/python_program/.idea/vcs.xml b/python_program/.idea/vcs.xml
+new file mode 100644
+index 0000000..6c0b863
+--- /dev/null
++++ b/python_program/.idea/vcs.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="VcsDirectoryMappings">
++    <mapping directory="$PROJECT_DIR$/.." vcs="Git" />
++  </component>
++</project>
+\ No newline at end of file
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+new file mode 100644
+index 0000000..e69de29

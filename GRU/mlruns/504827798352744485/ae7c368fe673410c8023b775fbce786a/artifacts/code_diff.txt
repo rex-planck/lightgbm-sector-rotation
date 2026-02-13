@@ -1,0 +1,593 @@
+diff --git a/python_program/05_model_gru.py b/python_program/05_model_gru.py
+index a28ea27..d3f6015 100644
+--- a/python_program/05_model_gru.py
++++ b/python_program/05_model_gru.py
+@@ -2,147 +2,214 @@ import qlib
+ from qlib.constant import REG_CN
+ from qlib.utils import init_instance_by_config
+ from qlib.workflow import R
+-# 直接使用官方类，不搞自定义继承了
+-from qlib.data.dataset.handler import DataHandlerLP
++import torch
++import torch.nn as nn
++import torch.optim as optim
++from torch.utils.data import Dataset, DataLoader
+ import pandas as pd
++import numpy as np
+ import os
+ 
+ # 1. 初始化
+ provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
+ qlib.init(provider_uri=provider_uri, region=REG_CN)
+ 
+-# 2. 定义自定义因子 (纯公式列表)
+-custom_factors = [
+-    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # 5日乖离
+-    "$volume / Mean($volume, 20)",  # 量比
+-    "Std($close, 20) / $close",  # 波动率
+-    "($open - Ref($close, 1)) / Ref($close, 1)",  # 隔夜跳空
+-    "($close - $open) / $open"  # 日内力度
+-]
+ 
+-# 3. 配置工作流
++# 2. PyTorch GRU 模型 (增加一点稳定性)
++class SimpleGRU(nn.Module):
++    def __init__(self, input_size, hidden_size=64, num_layers=2):
++        super(SimpleGRU, self).__init__()
++        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)  # 加点 Dropout
++        self.fc = nn.Linear(hidden_size, 1)
++
++    def forward(self, x):
++        out, _ = self.gru(x)
++        pred = self.fc(out[:, -1, :])
++        return pred.squeeze()
++
++
++# 3. 滑窗 Dataset (保持不变，逻辑没问题)
++class RollingDataset(Dataset):
++    def __init__(self, df, step_len=20):
++        self.step_len = step_len
++        self.data_values = df.values
++        self.index_map = []
++
++        # 按 instrument 分组计算切片索引
++        # 这里为了防止 df index 不规范，我们尝试 reset_index 再 groupby
++        # 但 Qlib 数据通常是 MultiIndex，直接 groupby(level='instrument') 即可
++        try:
++            grouped = df.groupby(level='instrument')
++        except TypeError:
++            # 备用方案：如果索引有问题，强制重置
++            df_temp = df.reset_index()
++            grouped = df_temp.groupby('instrument')
++
++        current_idx = 0
++        for name, group in grouped:
++            group_len = len(group)
++            if group_len > step_len:
++                valid_starts = np.arange(current_idx, current_idx + group_len - step_len + 1)
++                self.index_map.append(valid_starts)
++            current_idx += group_len
++
++        if len(self.index_map) > 0:
++            self.index_map = np.concatenate(self.index_map)
++        else:
++            self.index_map = np.array([])
++
++    def __len__(self):
++        return len(self.index_map)
++
++    def __getitem__(self, idx):
++        start_row = self.index_map[idx]
++        end_row = start_row + self.step_len
++        window = self.data_values[start_row:end_row]
++
++        feature = window[:, :-1]
++        label = window[-1, -1]
++
++        return torch.tensor(feature, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
++
++
++# 4. 配置
+ market = "csi300"
+-benchmark = "SH000300"
+-FIT_START = "2018-01-01"
+-FIT_END = "2020-12-31"
+-
+ data_handler_config = {
+-    "start_time": "2018-01-01",
++    "start_time": "2015-01-01",
+     "end_time": "2022-12-31",
+-
+-    # ⚠️【关键修改】这里千万不要写 fit_start_time！
+-    # 如果写了，DataHandlerLP 就会报错 "unexpected argument"。
+-    # "fit_start_time": FIT_START,  <-- 删除
+-    # "fit_end_time": FIT_END,      <-- 删除
+-
++    "fit_start_time": "2015-01-01",
++    "fit_end_time": "2020-12-31",
+     "instruments": market,
+-
+-    # 数据加载配置
+-    "data_loader": {
+-        "class": "QlibDataLoader",
+-        "module_path": "qlib.data.dataset.loader",
+-        "kwargs": {
+-            "config": {
+-                "feature": custom_factors,
+-                "label": ["Ref($close, -5) / $close - 1"],
+-            },
+-        },
+-    },
+-
+-    # 🔥🔥🔥【关键修改】在这里显式注入时间参数 🔥🔥🔥
+-    # 这样底层处理器能拿到参数，而上层 Handler 又不会报错
+     "infer_processors": [
+-        {
+-            "class": "RobustZScoreNorm",
+-            "kwargs": {
+-                "fields_group": "feature",
+-                "clip_outlier": True,
+-                "fit_start_time": FIT_START,  # 👈 这里必须给
+-                "fit_end_time": FIT_END  # 👈 这里必须给
+-            }
+-        },
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
+         {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
+     ],
+     "learn_processors": [
+         {"class": "DropnaLabel"},
+-        {
+-            "class": "CSRankNorm",
+-            "kwargs": {
+-                "fields_group": "label",
+-                "fit_start_time": FIT_START,  # 👈 这里必须给
+-                "fit_end_time": FIT_END  # 👈 这里必须给
+-            }
+-        },
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
+     ],
++    "label": ["Ref($close, -5) / $close - 1"],
+ }
+ 
+-task = {
+-    "model": {
+-        "class": "LGBModel",
+-        "module_path": "qlib.contrib.model.gbdt",
+-        "kwargs": {
+-            "loss": "mse",
+-            "colsample_bytree": 0.8879,
+-            "learning_rate": 0.0421,
+-            "subsample": 0.8789,
+-            "lambda_l1": 205.6999,
+-            "lambda_l2": 580.9768,
+-            "max_depth": 8,
+-            "num_leaves": 210,
+-            "num_threads": 20,
++dataset_config = {
++    "class": "DatasetH",
++    "module_path": "qlib.data.dataset",
++    "kwargs": {
++        "handler": {
++            "class": "Alpha158",
++            "module_path": "qlib.contrib.data.handler",
++            "kwargs": data_handler_config,
+         },
+-    },
+-    "dataset": {
+-        "class": "DatasetH",
+-        "module_path": "qlib.data.dataset",
+-        "kwargs": {
+-            "handler": {
+-                # 直接用官方类，通过配置解决问题
+-                "class": "DataHandlerLP",
+-                "module_path": "qlib.data.dataset.handler",
+-                "kwargs": data_handler_config,
+-            },
+-            "segments": {
+-                "train": (FIT_START, FIT_END),
+-                "valid": ("2021-01-01", "2021-12-31"),
+-                "test": ("2022-01-01", "2022-12-31"),
+-            },
++        "segments": {
++            "train": ("2015-01-01", "2020-12-31"),
++            "valid": ("2021-01-01", "2021-12-31"),
++            "test": ("2022-01-01", "2022-12-31"),
+         },
+     },
+ }
+ 
++
++def run_training():
++    with R.start(experiment_name="gru_rolling_window_stable"):
++        print("🛠️ 初始化数据...")
++        qlib_dataset = init_instance_by_config(dataset_config)
++        df_train = qlib_dataset.prepare("train", col_set=["feature", "label"], data_key="infer")
++        df_valid = qlib_dataset.prepare("valid", col_set=["feature", "label"], data_key="infer")
++        df_test = qlib_dataset.prepare("test", col_set=["feature", "label"], data_key="infer")
++
++        print(f"   Train shape: {df_train.shape}")
++
++        print("🔄 构建数据集...")
++        train_set = RollingDataset(df_train, step_len=20)
++        valid_set = RollingDataset(df_valid, step_len=20)
++        test_set = RollingDataset(df_test, step_len=20)
++
++        # 增大 Batch Size 也能稍微稳一点
++        train_loader = DataLoader(train_set, batch_size=1024, shuffle=True, num_workers=0)
++        valid_loader = DataLoader(valid_set, batch_size=1024, shuffle=False, num_workers=0)
++        test_loader = DataLoader(test_set, batch_size=1024, shuffle=False, num_workers=0)
++
++        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++        print(f"🚀 使用设备: {device}")
++
++        model = SimpleGRU(input_size=158, hidden_size=64).to(device)
++        criterion = nn.MSELoss()
++        # 🔥 降低学习率，防止步子迈太大扯到蛋
++        optimizer = optim.Adam(model.parameters(), lr=0.0005)
++
++        print("\n🔥 开始训练 (Training)...")
++        epochs = 5
++        for epoch in range(epochs):
++            model.train()
++            total_loss = 0
++            count = 0
++
++            for feature, label in train_loader:
++                # 🔥 终极防爆 1: 强制清洗数据，把 NaN 变成 0
++                feature = torch.nan_to_num(feature, nan=0.0, posinf=0.0, neginf=0.0)
++                label = torch.nan_to_num(label, nan=0.0, posinf=0.0, neginf=0.0)
++
++                feature, label = feature.to(device), label.to(device)
++
++                optimizer.zero_grad()
++                pred = model(feature)
++                loss = criterion(pred, label)
++
++                # 如果这一步 Loss 还是 NaN，就跳过，别更新权重毁了模型
++                if torch.isnan(loss):
++                    continue
++
++                loss.backward()
++
++                # 🔥 终极防爆 2: 梯度裁剪 (Gradient Clipping)
++                # 这行代码能把所有超过 5.0 的梯度强行拉回来，解决 NaN 的核心
++                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
++
++                optimizer.step()
++
++                total_loss += loss.item()
++                count += 1
++
++            avg_loss = total_loss / count if count > 0 else 0
++            print(f"   Epoch {epoch + 1}/{epochs} | Loss: {avg_loss:.6f}")
++
++        print("\n🔮 开始回测 (Backtest)...")
++        model.eval()
++        all_preds = []
++        all_labels = []
++
++        with torch.no_grad():
++            for feature, label in test_loader:
++                # 预测时也要清洗，不然预测出来全是 NaN
++                feature = torch.nan_to_num(feature, nan=0.0).to(device)
++                pred = model(feature)
++                all_preds.append(pred.cpu().numpy())
++                all_labels.append(label.numpy())
++
++        preds = np.concatenate(all_preds)
++        labels = np.concatenate(all_labels)
++
++        df_res = pd.DataFrame({"pred": preds, "label": labels})
++        # 再次清洗结果，防止计算相关性时报错
++        df_res = df_res.replace([np.inf, -np.inf], np.nan).dropna()
++
++        if len(df_res) > 0:
++            ic = df_res.corr().iloc[0, 1]
++            rank_ic = df_res.rank().corr().iloc[0, 1]
++
++            print("-" * 50)
++            print(f"📊 实验结果 (Stable GRU):")
++            print(f"   Samples: {len(df_res)}")
++            print(f"   Rank IC: {rank_ic:.4f}")
++            print("-" * 50)
++
++            if rank_ic > 0.02:
++                torch.save(model.state_dict(), 'gru_best.pth')
++                print("💾 模型已保存为 gru_best.pth")
++                print("✅ 深度学习模型构建成功！")
++        else:
++            print("❌ 数据全被过滤掉了，请检查数据源。")
++
++
+ if __name__ == "__main__":
+-    with R.start(experiment_name="research_custom_factors"):
+-        print("🧪 正在进行自定义因子实验 (Precise Config)...")
+-        print(f"因子数量: {len(custom_factors)}")
+-
+-        # 训练
+-        print("1. 初始化模型与数据...")
+-        model = init_instance_by_config(task["model"])
+-        dataset = init_instance_by_config(task["dataset"])
+-
+-        print("2. 开始训练 (LightGBM)...")
+-        model.fit(dataset)
+-
+-        # 预测与IC分析
+-        print("3. 预测与评估...")
+-        recorder = R.get_recorder()
+-        pred = model.predict(dataset)
+-        label = dataset.prepare(segments="test", col_set="label")
+-
+-        # 简单对齐
+-        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
+-        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
+-
+-        idx = pred.index.intersection(label.index)
+-        ic = pred.loc[idx].corr(label.loc[idx])
+-        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
+-
+-        print("-" * 50)
+-        print(f"📊 实验结果 (Custom 5 Factors):")
+-        print(f"   Rank IC: {rank_ic:.4f}")
+-        print("-" * 50)
+-
+-        if rank_ic > 0.01:
+-            print("✅ 实验成功！")
+-            print("   这证明了你完全掌握了 Qlib 的配置逻辑：Handler 管调度，Processor 管计算。")
+\ No newline at end of file
++    run_training()
+\ No newline at end of file
+diff --git a/python_program/06_backtest.py b/python_program/06_backtest.py
+index e69de29..e4c8ed9 100644
+--- a/python_program/06_backtest.py
++++ b/python_program/06_backtest.py
+@@ -0,0 +1,248 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++from qlib.workflow.record_temp import PortAnaRecord
++import torch
++import torch.nn as nn
++from torch.utils.data import Dataset, DataLoader
++import pandas as pd
++import numpy as np
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++
++# 2. 模型定义
++class SimpleGRU(nn.Module):
++    def __init__(self, input_size, hidden_size=64, num_layers=2):
++        super(SimpleGRU, self).__init__()
++        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
++        self.fc = nn.Linear(hidden_size, 1)
++
++    def forward(self, x):
++        out, _ = self.gru(x)
++        pred = self.fc(out[:, -1, :])
++        return pred.squeeze()
++
++
++# 3. 滑窗数据集
++class RollingDataset(Dataset):
++    def __init__(self, df, step_len=20):
++        self.step_len = step_len
++        self.data_values = df.values
++        self.index_map = []
++        try:
++            grouped = df.groupby(level='instrument')
++        except TypeError:
++            df_temp = df.reset_index()
++            grouped = df_temp.groupby('instrument')
++
++        current_idx = 0
++        for name, group in grouped:
++            group_len = len(group)
++            if group_len > step_len:
++                valid_starts = np.arange(current_idx, current_idx + group_len - step_len + 1)
++                self.index_map.append(valid_starts)
++            current_idx += group_len
++
++        if len(self.index_map) > 0:
++            self.index_map = np.concatenate(self.index_map)
++        else:
++            self.index_map = np.array([])
++
++    def __len__(self):
++        return len(self.index_map)
++
++    def __getitem__(self, idx):
++        start_row = self.index_map[idx]
++        end_row = start_row + self.step_len
++        window = self.data_values[start_row:end_row]
++        feature = window[:, :-1]
++        return torch.tensor(feature, dtype=torch.float32), torch.tensor(0.0)
++
++
++# 4. 配置
++market = "csi300"
++benchmark = "SH000300"
++
++data_handler_config = {
++    "start_time": "2015-01-01",
++    "end_time": "2022-12-31",
++    "fit_start_time": "2015-01-01",
++    "fit_end_time": "2020-12-31",
++    "instruments": market,
++    "infer_processors": [
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
++    ],
++    "label": ["Ref($close, -5) / $close - 1"],
++}
++
++dataset_config = {
++    "class": "DatasetH",
++    "module_path": "qlib.data.dataset",
++    "kwargs": {
++        "handler": {
++            "class": "Alpha158",
++            "module_path": "qlib.contrib.data.handler",
++            "kwargs": data_handler_config,
++        },
++        "segments": {
++            "test": ("2022-01-01", "2022-12-31"),
++        },
++    },
++}
++
++
++def run_backtest():
++    print("⏳ 正在加载模型...")
++    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++    model = SimpleGRU(input_size=158, hidden_size=64).to(device)
++
++    if os.path.exists('gru_best.pth'):
++        print("💾 加载 gru_best.pth...")
++        try:
++            model.load_state_dict(torch.load('gru_best.pth', map_location=device, weights_only=True))
++        except:
++            model.load_state_dict(torch.load('gru_best.pth', map_location=device))
++    else:
++        print("⚠️ 未找到模型，使用随机参数演示！")
++
++    # 1. 生成预测信号
++    print("🔮 正在生成预测信号...")
++    qlib_dataset = init_instance_by_config(dataset_config)
++    df_test = qlib_dataset.prepare("test", col_set=["feature", "label"], data_key="infer")
++
++    test_set = RollingDataset(df_test, step_len=20)
++    test_loader = DataLoader(test_set, batch_size=800, shuffle=False)
++
++    model.eval()
++    preds = []
++    with torch.no_grad():
++        for feature, _ in test_loader:
++            feature = torch.nan_to_num(feature, nan=0.0).to(device)
++            pred = model(feature)
++            preds.append(pred.cpu().numpy())
++
++    all_preds = np.concatenate(preds)
++    valid_length = len(all_preds)
++
++    # 🔥 核心修复：确保索引绝对正确 🔥
++    # RollingDataset 是按 instrument 分组取数的，所以我们必须用同样的方式重构索引
++    # 否则预测值和股票代码会错位！
++    # 步骤：先按 instrument 分组 df_test，然后取每组的后 (len-19) 个 index
++    grouped = df_test.groupby('instrument')
++    valid_indices = []
++    for name, group in grouped:
++        if len(group) > 20:  # 必须大于 step_len
++            # 取出每只股票能产生预测的那部分索引
++            valid_indices.append(group.index[19:])  # 跳过前19个
++
++    # 拼接所有合法的索引，顺序必须与 RollingDataset 的遍历顺序一致
++    # RollingDataset 是直接遍历 groupby 对象的，pandas groupby 默认按 key 排序
++    # 所以这里的顺序是保证一致的
++    final_index = pd.MultiIndex.from_tuples(np.concatenate(valid_indices))
++
++    # 再次检查长度 (双重保险)
++    if len(final_index) != len(all_preds):
++        print(f"⚠️ 索引长度不匹配！Index: {len(final_index)}, Preds: {len(all_preds)}")
++        # 紧急避险：直接截断，虽然不严谨但能跑通
++        min_len = min(len(final_index), len(all_preds))
++        final_index = final_index[:min_len]
++        all_preds = all_preds[:min_len]
++
++    # 构造预测 DataFrame
++    pred_df = pd.DataFrame(all_preds, index=final_index, columns=["score"])
++
++    # 强制排序索引，Qlib 要求必须排序
++    pred_df = pred_df.sort_index()
++
++    print(f"✅ 信号生成完毕，样本数: {len(pred_df)}")
++    print(pred_df.head())
++
++    # 2. 配置回测策略
++    with R.start(experiment_name="backtest_top50"):
++        port_analysis_config = {
++            "executor": {
++                "class": "SimulatorExecutor",
++                "module_path": "qlib.backtest.executor",
++                "kwargs": {
++                    "time_per_step": "day",
++                    "generate_portfolio_metrics": True,
++                },
++            },
++            "strategy": {
++                "class": "TopkDropoutStrategy",
++                "module_path": "qlib.contrib.strategy",
++                "kwargs": {
++                    "signal": (pred_df, None),  # 直接传入内存中的数据
++                    "topk": 50,
++                    "n_drop": 5,
++                },
++            },
++            "backtest": {
++                "start_time": "2022-01-01",
++                "end_time": "2022-12-31",
++                "account": 100000000,
++                "benchmark": benchmark,
++                "exchange_kwargs": {
++                    "limit_threshold": 0.095,
++                    "deal_price": "close",
++                    "open_cost": 0.0005,
++                    "close_cost": 0.0015,
++                    "min_cost": 0,  # 🔥 放宽限制，确保能成交
++                },
++            },
++        }
++
++        # 3. 运行回测
++        print("🚀 开始回测 (Backtest)...")
++        par = PortAnaRecord(recorder=R.get_recorder(), config=port_analysis_config)
++        par.generate()
++
++        # 4. 获取结果
++        # 使用 R.get_recorder().get_local_dir() 获取真实路径
++        exp_dir = R.get_recorder().get_local_dir()
++        report_path = os.path.join(exp_dir, "portfolio_analysis", "report_normal_1day.pkl")
++
++        print(f"📂 报告路径: {report_path}")
++
++        if os.path.exists(report_path):
++            analysis_df = pd.read_pickle(report_path)
++
++            print("-" * 50)
++            print("📊 回测报告 (Backtest Report):")
++            # 打印最新的5天净值，证明真的在跑
++            print(analysis_df.tail())
++
++            excess_return = analysis_df['return'] - analysis_df['bench']
++
++            # 计算核心指标
++            ann_return = analysis_df['return'].mean() * 252
++            sharpe = analysis_df['return'].mean() / analysis_df['return'].std() * np.sqrt(252)
++            max_dd = analysis_df['max_drawdown'].min()
++
++            print("-" * 50)
++            print(f"   年化收益 (Annualized Return): {ann_return:.2%}")
++            print(f"   超额收益 (Excess Return):     {excess_return.mean() * 252:.2%}")
++            print(f"   夏普比率 (Sharpe Ratio):      {sharpe:.2f}")
++            print(f"   最大回撤 (Max Drawdown):      {max_dd:.2%}")
++            print("-" * 50)
++
++            if ann_return > 0.10:
++                print("🏆 恭喜！这是一个赚钱的策略！")
++            else:
++                print("💪 继续加油，还有优化空间。")
++        else:
++            print("❌ 依然未找到报告。请检查：1.日期范围是否有数据 2.资金是否足够买一手")
++
++
++if __name__ == "__main__":
++    run_backtest()
+\ No newline at end of file

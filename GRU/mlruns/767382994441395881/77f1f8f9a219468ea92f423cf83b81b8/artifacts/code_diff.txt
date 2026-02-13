@@ -1,0 +1,134 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..993646d 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,128 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++# 引入 Alpha158 作为基类
++from qlib.contrib.data.handler import Alpha158
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (字典方便我们看，但 Qlib 不认字典)
++custom_factors_dict = {
++    "Bias5": "( $close - Mean($close, 5) ) / Mean($close, 5)",
++    "Vol_Ratio": "$volume / Mean($volume, 20)",
++    "Volatility": "Std($close, 20) / $close",
++    "Overnight": "($open - Ref($close, 1)) / Ref($close, 1)",
++    "Intraday": "($close - $open) / $open",
++}
++
++
++# 🔥🔥🔥 核心修复类 🔥🔥🔥
++class MyCustomAlpha(Alpha158):
++    def get_feature_config(self):
++        # 错误原因：Qlib 的 Loader 不支持直接返回字典
++        # 修复方案：转换成 [('公式', '别名'), ...] 的列表格式
++        # 这样既保留了公式，又保留了我们给它的命名(Alias)
++        return list(custom_factors_dict.keys())
++
++        # ⚠️ 注意：Qlib 默认逻辑比较怪，它其实更喜欢直接给字段名。
++        # 如果继承 Alpha158，它会期待返回的是一个字段名列表（List of Strings）
++        # 而这些字段名对应的公式，其实是在 self.fields 里面定义的。
++
++        # 修正策略 B：彻底重写，不依赖 get_feature_config 的默认行为
++        # 我们直接构造标准格式：
++        # return [(公式, 别名), (公式, 别名)...]
++        return [(formula, name) for name, formula in custom_factors_dict.items()]
++
++
++# 3. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++
++# Alpha158 基类会自动处理时间，不需要我们操心
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++    "fit_start_time": "2018-01-01",
++    "fit_end_time": "2020-12-31",
++    "instruments": market,
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                # 使用我们自定义的子类
++                "class": "MyCustomAlpha",
++                "module_path": "__main__",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": ("2018-01-01", "2020-12-31"),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验 (List Fix)...")
++        print("使用的自定义因子:")
++        for name, formula in custom_factors_dict.items():
++            print(f"  - {name}: {formula}")
++
++        # 训练
++        print("\n1. 初始化模型与数据...")
++        # 注意：第一次运行可能会比较慢，因为 Qlib 要为这 5 个新因子生成缓存
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++
++        print("2. 开始训练 (LightGBM)...")
++        model.fit(dataset)
++
++        # 预测与IC分析
++        print("3. 预测与评估...")
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.01:
++            print("✅ 实验成功！")
++            print("   恭喜！你成功用自己写的公式，驱动了 Qlib 的全套 AI 引擎！")
++            
+\ No newline at end of file

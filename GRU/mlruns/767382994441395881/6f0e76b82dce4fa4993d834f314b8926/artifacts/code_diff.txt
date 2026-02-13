@@ -1,0 +1,129 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..250f980 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,123 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (修正版：纯字符串列表)
++# Qlib 会直接计算这些公式，列名会自动变成公式本身
++custom_factors = [
++    # 因子1: 5日乖离率 (Bias5)
++    "( $close - Mean($close, 5) ) / Mean($close, 5)",
++
++    # 因子2: 量比 (Vol_Ratio)
++    "$volume / Mean($volume, 20)",
++
++    # 因子3: 20日波动率 (Volatility)
++    "Std($close, 20) / $close",
++
++    # 因子4: 隔夜涨跌幅 (Overnight)
++    "($open - Ref($close, 1)) / Ref($close, 1)",
++
++    # 因子5: 日内实体力度 (Intraday)
++    "($close - $open) / $open"
++]
++
++# 3. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++    "fit_start_time": "2018-01-01",
++    "fit_end_time": "2020-12-31",
++    "instruments": market,
++
++    # 注入自定义公式
++    "feature": custom_factors,
++
++    "infer_processors": [
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
++    ],
++    "label": ["Ref($close, -5) / $close - 1"],
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                "class": "Alpha158",
++                "module_path": "qlib.contrib.data.handler",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": ("2018-01-01", "2020-12-31"),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验...")
++        print("使用的因子公式:")
++        for f in custom_factors:
++            print(f"  - {f}")
++
++        # 训练
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++        model.fit(dataset)
++
++        # 预测与IC分析
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.03:
++            print("✅ 惊人！仅仅用 5 个简单因子就达到了及格线！")
++        else:
++            print("💡 正常。5个手搓因子通常打不过 158 个海量因子。但这是你完全掌控的逻辑。")
+\ No newline at end of file

@@ -1,0 +1,154 @@
+diff --git a/python_program/05_research_custom_factor.py b/python_program/05_research_custom_factor.py
+index e69de29..65759dc 100644
+--- a/python_program/05_research_custom_factor.py
++++ b/python_program/05_research_custom_factor.py
+@@ -0,0 +1,148 @@
++import qlib
++from qlib.constant import REG_CN
++from qlib.utils import init_instance_by_config
++from qlib.workflow import R
++from qlib.data.dataset.handler import DataHandlerLP
++import pandas as pd
++import os
++
++# 1. 初始化
++provider_uri = r"E:\Quant_program\Qlib-Cache\cn_data"
++qlib.init(provider_uri=provider_uri, region=REG_CN)
++
++# 2. 定义自定义因子 (你的狙击枪)
++custom_factors = [
++    "( $close - Mean($close, 5) ) / Mean($close, 5)",  # 5日乖离
++    "$volume / Mean($volume, 20)",  # 量比
++    "Std($close, 20) / $close",  # 波动率
++    "($open - Ref($close, 1)) / Ref($close, 1)",  # 隔夜跳空
++    "($close - $open) / $open"  # 日内力度
++]
++
++
++# 🔥🔥🔥 核心修复：手动接管参数 🔥🔥🔥
++class MyAlphaHandler(DataHandlerLP):
++    def __init__(self, instruments, start_time, end_time, data_loader, fit_start_time, fit_end_time, **kwargs):
++        # 1. 我们自己把这俩参数存起来，供后续 Processor 使用
++        self.fit_start_time = fit_start_time
++        self.fit_end_time = fit_end_time
++
++        # 2. 也是把 kwargs 里可能残留的删掉，防止报错
++        kwargs.pop('fit_start_time', None)
++        kwargs.pop('fit_end_time', None)
++
++        # 3. 调用父类时，绝对不要传 fit_start_time，父类不认！
++        super().__init__(
++            instruments=instruments,
++            start_time=start_time,
++            end_time=end_time,
++            data_loader=data_loader,
++            **kwargs
++        )
++
++
++# 3. 配置工作流
++market = "csi300"
++benchmark = "SH000300"
++
++data_handler_config = {
++    "start_time": "2018-01-01",
++    "end_time": "2022-12-31",
++    # 这些参数会被 MyAlphaHandler 精准捕获并存为属性
++    "fit_start_time": "2018-01-01",
++    "fit_end_time": "2020-12-31",
++    "instruments": market,
++
++    # 核心：使用 data_loader 加载自定义因子
++    "data_loader": {
++        "class": "QlibDataLoader",
++        "module_path": "qlib.data.dataset.loader",
++        "kwargs": {
++            "config": {
++                "feature": custom_factors,
++                "label": ["Ref($close, -5) / $close - 1"],
++            },
++        },
++    },
++
++    # 预处理
++    "infer_processors": [
++        {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
++        {"class": "Fillna", "kwargs": {"fields_group": "feature"}},
++    ],
++    "learn_processors": [
++        {"class": "DropnaLabel"},
++        {"class": "CSRankNorm", "kwargs": {"fields_group": "label"}},
++    ],
++}
++
++task = {
++    "model": {
++        "class": "LGBModel",
++        "module_path": "qlib.contrib.model.gbdt",
++        "kwargs": {
++            "loss": "mse",
++            "colsample_bytree": 0.8879,
++            "learning_rate": 0.0421,
++            "subsample": 0.8789,
++            "lambda_l1": 205.6999,
++            "lambda_l2": 580.9768,
++            "max_depth": 8,
++            "num_leaves": 210,
++            "num_threads": 20,
++        },
++    },
++    "dataset": {
++        "class": "DatasetH",
++        "module_path": "qlib.data.dataset",
++        "kwargs": {
++            "handler": {
++                # 指向我们上面的自定义类
++                "class": "MyAlphaHandler",
++                "module_path": "__main__",
++                "kwargs": data_handler_config,
++            },
++            "segments": {
++                "train": ("2018-01-01", "2020-12-31"),
++                "valid": ("2021-01-01", "2021-12-31"),
++                "test": ("2022-01-01", "2022-12-31"),
++            },
++        },
++    },
++}
++
++if __name__ == "__main__":
++    with R.start(experiment_name="research_custom_factors"):
++        print("🧪 正在进行自定义因子实验 (Manual Attr Fix)...")
++        print(f"因子数量: {len(custom_factors)}")
++
++        # 训练
++        print("1. 初始化模型与数据...")
++        model = init_instance_by_config(task["model"])
++        dataset = init_instance_by_config(task["dataset"])
++
++        print("2. 开始训练 (LightGBM)...")
++        model.fit(dataset)
++
++        # 预测与IC分析
++        print("3. 预测与评估...")
++        recorder = R.get_recorder()
++        pred = model.predict(dataset)
++        label = dataset.prepare(segments="test", col_set="label")
++
++        # 简单对齐
++        if isinstance(pred, pd.DataFrame): pred = pred.iloc[:, 0]
++        if isinstance(label, pd.DataFrame): label = label.iloc[:, 0]
++
++        idx = pred.index.intersection(label.index)
++        ic = pred.loc[idx].corr(label.loc[idx])
++        rank_ic = pred.loc[idx].rank().corr(label.loc[idx].rank())
++
++        print("-" * 50)
++        print(f"📊 实验结果 (Custom 5 Factors):")
++        print(f"   Rank IC: {rank_ic:.4f}")
++        print("-" * 50)
++
++        if rank_ic > 0.01:
++            print("✅ 实验成功！这证明你不仅会用库，还会改库。")
++            print("   (这是面试中展示工程能力的绝佳案例)")
+\ No newline at end of file
