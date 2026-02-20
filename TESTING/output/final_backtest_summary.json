@@ -1,0 +1,15 @@
+{
+  "top_k": 2,
+  "prob_threshold": 0.7,
+  "trailing_stop_pct": 0.0,
+  "start_value": 10000000.0,
+  "final_value": 54763226.00263024,
+  "total_return": 4.476322600263024,
+  "annual_return": 0.3345023702244614,
+  "sharpe": 1.7560904507306774,
+  "max_drawdown_pct": 31.27480728948302,
+  "calmar": 1.069558533577109,
+  "holding_pct": 94.8,
+  "trading_days": 1485,
+  "active_days": 1408
+}

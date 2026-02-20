@@ -1,0 +1,12 @@
+{
+  "python.defaultInterpreterPath": "C:\\Program Files\\Python313\\python.exe",
+  "python.pythonPath": "C:\\Program Files\\Python313\\python.exe",
+  "python.analysis.typeCheckingMode": "basic",
+  "python-envs.pythonProjects": [],
+  "chat.tools.terminal.autoApprove": {
+    "/^\\$env:PYTHONNOUSERSITE='1'; C:/msys64/ucrt64/bin/python\\.exe -c \"import sys; print\\(sys\\.version\\); import numpy, pandas, joblib; print\\(numpy\\.__version__\\)\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}
