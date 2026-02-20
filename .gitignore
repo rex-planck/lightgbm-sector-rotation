@@ -1,0 +1,34 @@
+# Ignore data, outputs and caches
+data/
+output/
+__pycache__/
+*.pyc
+*.pkl
+*.sqlite
+*.db
+.env
+.venv/
+.vscode/
+.DS_Store
+.idea/
+
+# Logs
+*.log
+
+# Python virtual env
+venv/
+ENV/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS files
+Thumbs.db
+
+# Large models / artifacts
+models/
+checkpoints/
+
+# Ignore personal configs
+credentials.json
+config_local.py

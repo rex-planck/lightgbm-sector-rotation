@@ -1,205 +1,248 @@
-# 🚀 Tushare 量化策略研究合集
-
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/PyTorch-2.0%2B-orange?style=flat-square&logo=pytorch" alt="PyTorch">
-  <img src="https://img.shields.io/badge/Data-Tushare%20%7C%20AKShare%20%7C%20Qlib-red?style=flat-square" alt="Data">
-  <img src="https://img.shields.io/badge/Quant-A%20Share-green?style=flat-square" alt="Quant">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/LightGBM-ML%20Engine-9558B2?style=for-the-badge&logo=microsoft&logoColor=white" />
+  <img src="https://img.shields.io/badge/Backtrader-Backtest-FF6F00?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Tushare-Data%20Source-E74C3C?style=for-the-badge" />
 </p>
 
+<h1 align="center">📈 全市场行业龙头轮动量化策略</h1>
+<h3 align="center">Full-Market Sector Leader Rolling LightGBM Strategy</h3>
+
 <p align="center">
-  <b>「数据 + 算法 + 风控」</b>三位一体的量化交易研究框架
+  基于 LightGBM 滚动训练的 A 股行业龙头轮动量化交易系统<br/>
+  覆盖 <b>50+ 行业</b> × <b>100+ A 股标的</b> · 自动特征工程 · Walk-Forward 训练 · 全链路回测
 </p>
 
 ---
 
-## 📖 项目简介
+Repository: https://github.com/rex-planck/lightgbm-sector-rotation
 
-本项目是一个面向 A 股市场的**多策略量化研究合集**，涵盖从宏观择时、传统多因子选股到前沿 AI 驱动的 Alpha 挖掘。项目分为五个独立模块，代表了不同的量化研究范式：
 
-| 模块 | 核心方法 | 策略类型 | 特点 |
-|:---:|:---:|:---:|:---|
-| 🔬 **混合因子挖掘** | GP + Transformer | 机器学习选股 | 自动发现非线性因子 |
-| 🌍 **宏观行业轮动** | HMM + 宏观流动性 | 宏观择时 | 自上而下的行业配置 |
-| 🤖 **AI 量化平台** | Qlib + LightGBM | 机器学习 Alpha | 基于 MSRA Qlib 的全链路方案 |
-|  **多因子选股** | 基本面筛选 | 价值投资 | 低估值蓝筹策略 |
-| 🧠 **NLP 增强策略** | 情绪分析 + 趋势跟踪 | 事件驱动 | 研报情绪量化 |
+## ✨ 项目亮点
 
-> 💡 **设计理念**：探索量化投资的多种可能性，从传统财务分析到现代深度学习，从结构化数据到非结构化文本，从微观个股到宏观配置。
+| 指标 | 数值 |
+|:---:|:---:|
+| **总收益率** | +447.63% |
+| **年化收益** | +33.45% |
+| **Sharpe Ratio** | 1.756 |
+| **最大回撤** | -31.27% |
+| **Calmar Ratio** | 1.07 |
+| **持仓占比** | 94.8% |
+
+> 回测区间：2020-01-01 ~ 2026-02-18 · 初始资金 1000 万 · 含 A 股佣金 + 印花税
+
+---
+
+## 📐 策略架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     数据层 (Data Layer)                       │
+│  Tushare Pro API → 日线行情 + 复权因子 → 前复权 CSV          │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  特征工程层 (Feature Layer)                    │
+│  TA-Lib 计算 25+ 技术指标 (RSI/MACD/ADX/Bollinger/OBV...)   │
+│  + 动量 / 波动率 / 量价背离 / K线形态                         │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 机器学习层 (ML Layer)                         │
+│  Rolling Walk-Forward LightGBM Classifier                   │
+│  · 400日滚动窗口，每20日重新训练                               │
+│  · 时序验证 + Early Stopping 防过拟合                         │
+│  · 5日前瞻收益 > 1% 作为标签                                  │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  回测层 (Backtest Layer)                      │
+│  Backtrader 引擎 · Cheat-on-Close 模式                      │
+│  · Top-K 持仓 (K=2) · 概率阈值 ≥ 0.70                       │
+│  · 8% 固定止损 · 最少持仓 3 天                                │
+│  · A 股佣金模型 (买 0.03% / 卖 0.03% + 0.1% 印花税)          │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  可视化层 (Visualization)                     │
+│  净值曲线 · 水下回撤 · 月度热力图 · 综合报告                   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 🗂️ 项目结构
 
 ```
-Tushare/
-├── 📁 Hybrid_Factor_Mining_GP/          # 模块一：混合因子挖掘系统
-│   ├── src/
-│   │   ├── run_v3_pipeline.py           # V3 主启动脚本
-│   │   └── gp_factor_mining_optimized.py # 遗传规划因子挖掘
-│   └── output_v3/                       # 回测结果输出
-│
-├── 📁 AShare_Macro_Rotation/            # 模块二：宏观行业轮动系统
-│   ├── models/                          # HMM 宏观状态识别
-│   ├── strategy/                        # 轮动与择时策略
-│   └── data/                            # 宏观与行业数据
-│
-├── 📁 GRU/                              # 模块三：Qlib AI 量化平台
-│   ├── 02_train_model.py                # Alpha158 + LightGBM 训练
-│   ├── 03_backtest_simulation.py        # Top-K Dropout 回测
-│   └── mlruns/                          # MLflow 实验记录
-│
-├── 📁 Multi-Factor Selection Model/     # 模块四：多因子选股模型
-│   └── multi_factor_stock_selection/
-│       ├── main.py                      # 蓝筹策略主入口
-│       └── strategies/                  # 策略逻辑实现
-│
-├── 📁 NLP-Enhanced Multi-Factor/        # 模块五：NLP 增强策略
-│   ├── SentimentAlphaStrategy/          # 情绪因子策略
-│   └── etl/                             # 研报数据清洗与情绪计算
-│
-└── README.md                            # 本文件
+TESTING/
+├── main.py                 # 🚀 一键执行入口：下载 → 训练 → 回测
+├── config.py               # ⚙️ 全局配置：标的池、模型参数、路径
+├── data_loader.py          # 📥 Tushare 数据下载与前复权处理
+├── ml_strategy.py          # 🧠 Rolling LightGBM 训练 & Walk-Forward 预测
+├── backtest_engine.py      # 📊 Backtrader 回测引擎 (Phase 4 Strategy)
+├── charts.py               # 🎨 可视化图表生成 (净值/回撤/热力图)
+├── grid_search.py          # 🔍 网格搜索 top_k × threshold
+├── param_search.py         # 🔧 高效参数搜索
+├── refine_search.py        # 🎯 精细参数优化 (含 trailing stop)
+├── train_and_search.py     # 🔄 训练 + 自适应网格搜索 pipeline
+├── run_final_backtest.py   # ✅ 最终回测 & 输出总结报告
+├── requirements.txt        # 📦 依赖列表
+├── data/                   # 💾 本地K线 CSV 数据 (100+ 股票)
+└── output/                 # 📁 回测输出 (图表/报告/预测文件)
+    ├── phase4_report.png       # 综合报告图
+    ├── equity_curve.png        # 净值曲线
+    ├── drawdown.png            # 水下回撤曲线
+    ├── monthly_heatmap.png     # 月度收益热力图
+    ├── predictions.pkl         # 模型预测概率 (全股票)
+    ├── final_backtest_summary.json  # 回测指标汇总
+    └── pyfolio_*.csv           # PyFolio 兼容格式
 ```
 
 ---
 
-## 🔬 模块详解
+## 🚀 快速开始
 
-### 1️⃣ Hybrid Factor Mining - 混合因子挖掘系统 V3
+### 1. 环境准备
 
-**核心思想**：结合遗传规划（GP）的可解释性与 Transformer 的深度特征提取能力，构建新一代 Alpha 挖掘流水线。
-
-#### ✨ 核心特性
-- **🧬 遗传规划因子挖掘**：利用 `gplearn` 进行大规模种群进化，自动发现非线性 Alpha 因子。
-- **🤖 对抗性 Transformer**：引入对抗训练（Adversarial Training）和多头注意力机制，提升模型鲁棒性。
-- **🌍 市场状态感知**：自动识别牛/熊/震荡状态，结合行业中性化处理。
-- **📊 显著超额**：年化收益 +28.5%，夏普比率 2.15 (2022-2026)。
-
-#### 🚀 快速开始
 ```bash
-cd Hybrid_Factor_Mining_GP/src
-python run_v3_pipeline.py
+# 克隆项目
+git clone <repo-url>
+cd TESTING
+
+# 安装依赖
+pip install -r requirements.txt
+
+# TA-Lib 需要额外安装（Windows 推荐使用预编译 whl）
+# https://github.com/cgohlke/talib-build/releases
+pip install TA-Lib
 ```
 
----
+### 2. 配置 Tushare Token
 
-### 2️⃣ AShare Macro Rotation - 宏观行业轮动
+在 `config.py` 中设置你的 Tushare Pro Token：
 
-**核心思想**：解决“因时制宜”问题，结合宏观流动性视角 (Top-Down) 与微观机器学习择时 (Bottom-Up)。
-
-#### ✨ 核心特性
-- **📊 HMM 状态识别**：利用隐马尔可夫模型识别 Panic/Oscillation/Bull 三种市场状态。
-- **💸 流动性接管**：引入 M2-CPI 剪刀差作为超级信号，在流动性泛滥时强制做多。
-- **🛡️ 避险与进攻**：完美规避 2022/2024 熊市，精准捕捉 2025 流动性牛市（半导体 +118%）。
-
-#### 🚀 快速开始
-```bash
-cd AShare_Macro_Rotation
-python strategy/batch_run.py
+```python
+TS_TOKEN = "your_tushare_pro_token"
 ```
 
----
+> 📌 需要 Tushare Pro 权限。注册地址：https://tushare.pro/register
 
-### 3️⃣ Qlib AI Alpha - 基于 MSRA Qlib 的量化平台
+### 3. 一键运行
 
-**核心思想**：基于微软 Qlib 框架的高性能全链路量化投研方案。
-
-#### ✨ 核心特性
-- **⚡ 高性能数据引擎**：基于二进制存储，极速读取 OHLCV 数据。
-- **📈 Alpha158 因子**：内置经典的 158 个量价因子库。
-- **🌲 LightGBM 模型**：基于梯度提升树的预测模型，Rank IC 达到 0.0536。
-- **📉 稳健回测**：在 2022 年熊市中实现 +8.12% 的超额收益 (Alpha)。
-
-#### 🚀 快速开始
 ```bash
-cd GRU
-python 02_train_model.py
-python 03_backtest_simulation.py
-```
-
----
-
-### 4️⃣ Multi-Factor Selection - 低估值蓝筹策略
-
-**核心思想**：基于经典价值投资理念，筛选低估值优质蓝筹股。
-
-#### ✨ 核心特性
-- **🎯 价值筛选**：PE < 20, PB < 2, 市值 > 50亿。
-- **📈 财务评分**：综合 ROE、营收增长率、净利润增长率。
-- **⚖️ 均衡配置**：行业分散与定期调仓。
-
-#### 🚀 快速开始
-```bash
-cd "Multi-Factor Selection Model/multi_factor_stock_selection"
 python main.py
 ```
 
----
+这将自动执行完整 pipeline：
+1. **数据下载** — 从 Tushare 拉取行情数据并前复权处理
+2. **模型训练** — 滚动 Walk-Forward LightGBM 预测概率
+3. **策略回测** — Backtrader 引擎执行 Top-K 轮动回测
+4. **输出报告** — 生成图表、CSV 和 JSON 汇总
 
-### 5️⃣ NLP-Enhanced Strategy - 研报情绪增强
+### 4. 参数优化（可选）
 
-**核心思想**：通过 NLP 技术量化券商研报情绪，构建独特的 Alpha 因子。
-
-#### ✨ 核心特性
-- **📝 文本挖掘**：从非结构化研报中提取情绪分值。
-- **📉 信号衰减**：引入时间衰减模型 $e^{-\lambda t}$ 反映信息时效性。
-- **🔄 因子融合**：结合均线趋势与波动率风控。
-
-#### 🚀 快速开始
 ```bash
-cd "NLP-Enhanced Multi-Factor"
-python etl/download_reports.py
-python run_strategy_local.py
+# 使用已有 predictions.pkl 进行网格搜索
+python grid_search.py
+
+# 或一体化训练 + 搜索
+python train_and_search.py
+
+# 精细化搜索（含 trailing stop）
+python refine_search.py
+
+# 使用最优参数重新回测
+python run_final_backtest.py
 ```
 
 ---
 
-## ⚙️ 环境依赖
+## 🧠 核心技术细节
 
-推荐使用 Python 3.8+。
+### 特征工程（25+ 技术指标）
 
-```bash
-# 通用数据接口
-pip install tushare akshare
+| 类别 | 特征 | 说明 |
+|:---|:---|:---|
+| **动量** | RSI(5,14), ROC(5,10,20), MACD, MACD Histogram | 价格动量与趋势 |
+| **趋势** | ADX(14), CCI(14), Williams %R, MFI(14) | 趋势强度与超买超卖 |
+| **均线** | SMA 5/20/60 比率, 价格偏离 MA20 | 均线系统 |
+| **波动率** | ATR(5,14) 归一化, 多周期收益率 | 波动率估计 |
+| **布林带** | BB Position (0~1) | 价格在布林带中的位置 |
+| **量价** | 量比(5日/20日), 量价相关系数(10日) | 成交量动态 |
+| **K线** | Body Ratio (-1~1) | K线实体占比 |
 
-# 核心计算库
-pip install pandas numpy matplotlib scikit-learn
+### 模型训练策略
 
-# 深度学习与机器学习 (Hybrid Mining & Qlib)
-pip install torch lightgbm gplearn hmmlearn
+- **滚动窗口**：400 日历史数据训练，每 20 日重新拟合
+- **标签定义**：未来 5 日收益率 > 1% 为正类
+- **验证方式**：时序 80/20 划分 + Early Stopping (20 rounds)
+- **正则化**：L1(0.1) + L2(1.0) + `class_weight="balanced"`
 
-# Qlib 专用 (Linux/WSL 推荐)
-pip install pyqlib
-```
+### 风控体系
+
+| 参数 | 值 | 说明 |
+|:---|:---:|:---|
+| Top-K | 2 | 每日最多持有 2 只最高概率股票 |
+| 概率阈值 | 0.70 | 预测概率 ≥ 70% 才入选候选池 |
+| 固定止损 | 8% | 持仓跌破成本 8% 立即止损 |
+| 最少持仓 | 3 天 | 防止频繁换手 |
+| 仓位管理 | 0.95 / K | 等权分配，保留 5% 现金缓冲 |
+
+---
+
+## 📊 回测结果可视化
+
+### 综合报告
+
+<p align="center">
+  <img src="output/phase4_report.png" width="90%" alt="综合报告" />
+</p>
+
+### 净值曲线
+
+<p align="center">
+  <img src="output/equity_curve.png" width="90%" alt="净值曲线" />
+</p>
+
+### 月度收益热力图
+
+<p align="center">
+  <img src="output/monthly_heatmap.png" width="85%" alt="月度收益热力图" />
+</p>
+
+---
+
+## 📦 依赖
+
+| 库 | 用途 |
+|:---|:---|
+| `pandas` / `numpy` | 数据处理 |
+| `lightgbm` | 梯度提升分类器 |
+| `scikit-learn` | 机器学习工具 |
+| `backtrader` | 回测引擎 |
+| `tushare` | A 股数据源 |
+| `TA-Lib` | 技术分析指标 |
+| `matplotlib` / `seaborn` | 可视化 |
+| `joblib` | 并行计算 & 序列化 |
 
 ---
 
 ## ⚠️ 免责声明
 
-> **本项目仅用于教学与研究目的，不构成任何投资建议。**
+> 本项目仅供**学习研究**使用，不构成任何投资建议。
 > 
-> 量化交易具有高度风险，历史表现不代表未来收益。请根据自身情况独立判断，入市需谨慎。
+> 回测结果基于历史数据，不代表未来表现。实际交易涉及滑点、流动性风险和市场冲击成本等因素，可能与回测结果存在显著差异。
+> 
+> 量化投资具有风险，请谨慎决策。
 
 ---
 
-## 🤝 贡献与反馈
+## 📄 License
 
-欢迎提交 Issue 或 Pull Request 来改进本项目：
-
-- **Bug 反馈**：请附上完整的错误日志和复现步骤
-- **功能建议**：欢迎讨论新的因子算子或模型架构
-- **数据问题**：请说明具体的数据接口和错误信息
-
----
-
-## 📜 许可证
-
-本项目采用 [MIT License](LICENSE) 开源。
-
-Copyright (c) 2026 Quant Lab.
+本项目采用 MIT License 开源。
 
 ---
 
 <p align="center">
-  <i>⭐ 如果这个项目对你有帮助，欢迎点个 Star！</i>
+  <sub>Built with ❤️ for quantitative research</sub>
 </p>
